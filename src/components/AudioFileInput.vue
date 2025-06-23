@@ -1,0 +1,350 @@
+<template>
+  <div class="space-y-4">
+    <div
+      ref="dropZone"
+      class="border-2 border-dashed border-muted-foreground/25 rounded-lg p-8 text-center transition-colors hover:border-muted-foreground/50 cursor-pointer"
+      :class="{
+        'border-primary bg-primary/5': isDragOver,
+        'border-destructive bg-destructive/5': error,
+      }"
+      @click="triggerFileInput"
+      @drop="handleDrop"
+      @dragover.prevent="isDragOver = true"
+      @dragleave="isDragOver = false"
+      @dragenter.prevent
+    >
+      <Upload class="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+      <div class="space-y-2">
+        <p class="text-lg font-medium">
+          Drop your audio file here, or
+          <button type="button" class="text-primary hover:underline" @click="triggerFileInput">
+            browse
+          </button>
+        </p>
+        <p class="text-sm text-muted-foreground">Supports MP3, WAV, M4A, OGG (max 25MB)</p>
+      </div>
+
+      <input
+        ref="fileInput"
+        type="file"
+        accept="audio/*"
+        class="hidden"
+        @change="handleFileSelect"
+      />
+    </div>
+
+    <!-- File Preview -->
+    <div v-if="selectedFile" class="bg-muted rounded-lg p-4">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+          <FileAudio class="h-8 w-8 text-primary" />
+          <div>
+            <p class="font-medium">{{ selectedFile.name }}</p>
+            <p class="text-sm text-muted-foreground">
+              {{ formatFileSize(selectedFile.size) }}
+              <span v-if="duration"> • {{ formatDuration(duration) }}</span>
+            </p>
+          </div>
+        </div>
+        <Button variant="ghost" size="sm" @click="clearFile">
+          <X class="h-4 w-4" />
+        </Button>
+      </div>
+
+      <!-- Audio Preview -->
+      <audio
+        v-if="audioUrl"
+        ref="audioPreview"
+        :src="audioUrl"
+        controls
+        class="w-full mt-3"
+        @loadedmetadata="updateDuration"
+      />
+    </div>
+
+    <!-- Transcription Options -->
+    <div v-if="selectedFile" class="bg-muted/50 rounded-lg p-4 space-y-4">
+      <h3 class="font-medium flex items-center space-x-2">
+        <Settings class="h-4 w-4" />
+        <span>Transcription Options</span>
+      </h3>
+
+      <div class="grid md:grid-cols-2 gap-4">
+        <!-- Language Selection -->
+        <div class="space-y-2">
+          <label class="text-sm font-medium">Language</label>
+          <Select v-model="transcriptionOptions.languageCode">
+            <SelectTrigger>
+              <SelectValue placeholder="Select language" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem
+                v-for="language in SUPPORTED_LANGUAGES"
+                :key="language.code || 'auto'"
+                :value="language.code"
+              >
+                {{ language.name }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          <p class="text-xs text-muted-foreground">
+            Leave as Auto-detect for automatic language detection
+          </p>
+        </div>
+
+        <!-- Model Selection -->
+        <div class="space-y-2">
+          <label class="text-sm font-medium">Model</label>
+          <Select v-model="transcriptionOptions.modelId">
+            <SelectTrigger>
+              <SelectValue placeholder="Select model" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="scribe_v1">Scribe v1</SelectItem>
+            </SelectContent>
+          </Select>
+          <p class="text-xs text-muted-foreground">Currently only Scribe v1 is supported</p>
+        </div>
+      </div>
+
+      <!-- Advanced Options -->
+      <div class="space-y-3">
+        <div class="flex items-center space-x-2">
+          <Switch id="diarize" v-model="transcriptionOptions.diarize" />
+          <label for="diarize" class="text-sm font-medium">Speaker Diarization</label>
+        </div>
+        <p class="text-xs text-muted-foreground ml-6">
+          Identify and separate different speakers in the audio
+        </p>
+
+        <div class="flex items-center space-x-2">
+          <Switch id="tag-events" v-model="transcriptionOptions.tagAudioEvents" />
+          <label for="tag-events" class="text-sm font-medium">Tag Audio Events</label>
+        </div>
+        <p class="text-xs text-muted-foreground ml-6">
+          Identify non-speech audio events like laughter, applause, etc.
+        </p>
+      </div>
+    </div>
+
+    <!-- Error Message -->
+    <Alert v-if="error" variant="destructive">
+      <AlertCircle class="h-4 w-4" />
+      <AlertTitle>Error</AlertTitle>
+      <AlertDescription>{{ error }}</AlertDescription>
+    </Alert>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, watch, onUnmounted, nextTick } from 'vue'
+import { Upload, FileAudio, X, AlertCircle, Settings } from 'lucide-vue-next'
+import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { SUPPORTED_LANGUAGES, type TranscriptionOptions } from '@/lib/elevenlabs-api'
+
+interface AudioFileInputProps {
+  modelValue?: File | null
+  transcriptionOptions?: TranscriptionOptions
+}
+
+interface AudioFileInputEmits {
+  (e: 'update:modelValue', value: File | null): void
+  (e: 'update:transcriptionOptions', value: TranscriptionOptions): void
+  (e: 'file-selected', file: File): void
+  (e: 'error', error: string): void
+}
+
+const props = withDefaults(defineProps<AudioFileInputProps>(), {
+  modelValue: null,
+  transcriptionOptions: () => ({
+    modelId: 'scribe_v1',
+    tagAudioEvents: true,
+    languageCode: null,
+    diarize: true,
+  }),
+})
+
+const emit = defineEmits<AudioFileInputEmits>()
+
+const dropZone = ref<HTMLDivElement>()
+const fileInput = ref<HTMLInputElement>()
+const audioPreview = ref<HTMLAudioElement>()
+const selectedFile = ref<File | null>(null)
+const audioUrl = ref<string | null>(null)
+const duration = ref<number | null>(null)
+const isDragOver = ref(false)
+const error = ref<string | null>(null)
+
+// Local transcription options
+const transcriptionOptions = ref<TranscriptionOptions>({
+  modelId: 'scribe_v1',
+  tagAudioEvents: true,
+  languageCode: null,
+  diarize: true,
+  ...props.transcriptionOptions,
+})
+
+// Audio file validation
+const MAX_FILE_SIZE = 25 * 1024 * 1024 // 25MB
+const ALLOWED_TYPES = [
+  'audio/mpeg',
+  'audio/wav',
+  'audio/x-wav',
+  'audio/mp4',
+  'audio/m4a',
+  'audio/ogg',
+  'audio/webm',
+  'audio/flac',
+]
+
+function validateFile(file: File): string | null {
+  if (file.size > MAX_FILE_SIZE) {
+    return 'File size must be less than 25MB'
+  }
+
+  if (!ALLOWED_TYPES.includes(file.type)) {
+    return 'Unsupported file type. Please use MP3, WAV, M4A, OGG, or FLAC'
+  }
+
+  return null
+}
+
+function setFile(file: File) {
+  const validationError = validateFile(file)
+  if (validationError) {
+    error.value = validationError
+    emit('error', validationError)
+    return
+  }
+
+  error.value = null
+  selectedFile.value = file
+
+  // Create audio URL for preview
+  if (audioUrl.value) {
+    URL.revokeObjectURL(audioUrl.value)
+  }
+  audioUrl.value = URL.createObjectURL(file)
+
+  emit('update:modelValue', file)
+  emit('file-selected', file)
+}
+
+function clearFile() {
+  selectedFile.value = null
+  duration.value = null
+
+  if (audioUrl.value) {
+    URL.revokeObjectURL(audioUrl.value)
+    audioUrl.value = null
+  }
+
+  if (fileInput.value) {
+    fileInput.value.value = ''
+  }
+
+  emit('update:modelValue', null)
+}
+
+function triggerFileInput() {
+  fileInput.value?.click()
+}
+
+function handleFileSelect(event: Event) {
+  const target = event.target as HTMLInputElement
+  if (target.files && target.files[0]) {
+    setFile(target.files[0])
+  }
+}
+
+function handleDrop(event: DragEvent) {
+  event.preventDefault()
+  isDragOver.value = false
+
+  const files = event.dataTransfer?.files
+  if (files && files[0]) {
+    setFile(files[0])
+  }
+}
+
+function updateDuration() {
+  if (audioPreview.value) {
+    duration.value = audioPreview.value.duration
+  }
+}
+
+function formatFileSize(bytes: number): string {
+  const sizes = ['Bytes', 'KB', 'MB', 'GB']
+  if (bytes === 0) return '0 Bytes'
+  const i = Math.floor(Math.log(bytes) / Math.log(1024))
+  return Math.round((bytes / Math.pow(1024, i)) * 100) / 100 + ' ' + sizes[i]
+}
+
+function formatDuration(seconds: number): string {
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = Math.floor(seconds % 60)
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
+}
+
+// Watch for external changes to modelValue
+watch(
+  () => props.modelValue,
+  (newValue) => {
+    if (newValue !== selectedFile.value) {
+      if (newValue) {
+        setFile(newValue)
+      } else {
+        clearFile()
+      }
+    }
+  },
+)
+
+// Track if we're updating from props to prevent loop
+const isUpdatingFromProps = ref(false)
+
+// Watch for changes to transcription options and emit them
+watch(
+  transcriptionOptions,
+  (newOptions) => {
+    // Don't emit if we're currently updating from props
+    if (!isUpdatingFromProps.value) {
+      emit('update:transcriptionOptions', newOptions)
+    }
+  },
+  { deep: true },
+)
+
+// Watch for external changes to transcription options
+watch(
+  () => props.transcriptionOptions,
+  (newOptions) => {
+    if (newOptions) {
+      // Set flag to prevent emission loop
+      isUpdatingFromProps.value = true
+      transcriptionOptions.value = { ...newOptions }
+      // Reset flag on next tickFStart Transcript
+      nextTick(() => {
+        isUpdatingFromProps.value = false
+      })
+    }
+  },
+  { deep: true },
+)
+
+// Cleanup on unmount
+onUnmounted(() => {
+  if (audioUrl.value) {
+    URL.revokeObjectURL(audioUrl.value)
+  }
+})
+</script>
