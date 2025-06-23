@@ -17,22 +17,12 @@
       </div>
 
       <div class="flex items-center space-x-2">
-        <Button
-          variant="outline"
-          size="sm"
-          @click="copyToClipboard"
-          :disabled="!transcription?.apiResponse"
-        >
+        <Button variant="outline" size="sm" @click="copyToClipboard" :disabled="!transcription?.apiResponse">
           <Copy class="h-4 w-4 mr-2" />
           Copy
         </Button>
 
-        <Button
-          variant="outline"
-          size="sm"
-          @click="exportTranscription"
-          :disabled="!transcription?.apiResponse"
-        >
+        <Button variant="outline" size="sm" @click="exportTranscription" :disabled="!transcription?.apiResponse">
           <Download class="h-4 w-4 mr-2" />
           Export
         </Button>
@@ -42,10 +32,7 @@
     <!-- Content -->
     <div class="border rounded-lg p-4 min-h-[200px] bg-muted/30">
       <!-- Loading State -->
-      <div
-        v-if="transcription?.status === 'processing'"
-        class="flex items-center justify-center h-32"
-      >
+      <div v-if="transcription?.status === 'processing'" class="flex items-center justify-center h-32">
         <div class="text-center space-y-2">
           <Loader2 class="h-8 w-8 animate-spin mx-auto text-primary" />
           <p class="text-sm text-muted-foreground">Processing transcription...</p>
@@ -53,10 +40,7 @@
       </div>
 
       <!-- Error State -->
-      <div
-        v-else-if="transcription?.status === 'error'"
-        class="flex items-center justify-center h-32"
-      >
+      <div v-else-if="transcription?.status === 'error'" class="flex items-center justify-center h-32">
         <Alert variant="destructive" class="max-w-md">
           <AlertCircle class="h-4 w-4" />
           <AlertTitle>Transcription Failed</AlertTitle>
@@ -89,14 +73,16 @@
       </div>
 
       <!-- Text View -->
-      <div v-else class="space-y-4">        <div class="flex items-center flex-wrap gap-2">
+      <div v-else class="space-y-4">
+        <div class="flex items-center flex-wrap gap-2">
           <Badge variant="secondary">
             {{ transcription.apiResponse.languageCode }}
           </Badge>
           <Badge variant="outline">
             Confidence: {{ Math.round(transcription.apiResponse.languageProbability * 100) }}%
-          </Badge>          <Badge variant="outline">
-            {{ transcription.apiResponse.words.filter((w) => w.type === 'word').length }} words
+          </Badge>
+          <Badge variant="outline">
+            {{transcription.apiResponse.words.filter((w) => w.type === 'word').length}} words
           </Badge>
           <Badge variant="outline" v-if="speakerSegments.length > 1">
             {{ speakerSegments.length }} speakers
@@ -104,7 +90,7 @@
           <Badge variant="outline" v-if="speakerSegments.length > 1">
             {{ speakerSegments.length }} segments
           </Badge>
-        </div>        <!-- Interactive Text with Speaker Segments -->
+        </div> <!-- Interactive Text with Speaker Segments -->
         <div class="max-h-96 overflow-auto space-y-3">
           <p v-if="wordSyncEnabled" class="text-xs text-muted-foreground mb-3">
             Click on words to jump to audio position
@@ -113,16 +99,10 @@
           <!-- Speaker Legend -->
           <div v-if="speakerSegments.length > 1" class="flex flex-wrap gap-2 mb-4 p-3 bg-muted/50 rounded-lg">
             <div class="text-xs font-medium text-muted-foreground mb-1 w-full">Speakers:</div>
-            <div
-              v-for="speakerId in uniqueSpeakers"
-              :key="speakerId"
+            <div v-for="speakerId in uniqueSpeakers" :key="speakerId"
               class="flex items-center gap-2 px-2 py-1 rounded-full text-xs font-medium"
-              :class="getSpeakerStyle(speakerId)"
-            >
-              <div
-                class="w-2 h-2 rounded-full"
-                :class="getSpeakerDotColor(speakerId)"
-              ></div>
+              :class="getSpeakerStyle(speakerId)">
+              <div class="w-2 h-2 rounded-full" :class="getSpeakerDotColor(speakerId)"></div>
               <span>{{ getSpeakerLabel(speakerId) }}</span>
               <span class="text-xs opacity-75">
                 ({{ getSpeakerWordCount(speakerId) }} words)
@@ -131,21 +111,12 @@
           </div>
 
           <div class="space-y-4">
-            <div
-              v-for="(segment, segmentIndex) in speakerSegments"
-              :key="segmentIndex"
-              class="relative"
-            >
+            <div v-for="(segment, segmentIndex) in speakerSegments" :key="segmentIndex" class="relative">
               <!-- Speaker Header -->
               <div class="flex items-center gap-2 mb-2">
-                <div
-                  class="flex items-center gap-2 px-2 py-1 rounded-full text-xs font-medium"
-                  :class="getSpeakerStyle(segment.speakerId)"
-                >
-                  <div
-                    class="w-2 h-2 rounded-full"
-                    :class="getSpeakerDotColor(segment.speakerId)"
-                  ></div>
+                <div class="flex items-center gap-2 px-2 py-1 rounded-full text-xs font-medium"
+                  :class="getSpeakerStyle(segment.speakerId)">
+                  <div class="w-2 h-2 rounded-full" :class="getSpeakerDotColor(segment.speakerId)"></div>
                   <span>{{ getSpeakerLabel(segment.speakerId) }}</span>
                 </div>
                 <span class="text-xs text-muted-foreground">
@@ -154,30 +125,20 @@
               </div>
 
               <!-- Speaker Text -->
-              <div
-                class="pl-4 border-l-2 leading-relaxed text-sm select-text"
-                :class="getSpeakerBorderColor(segment.speakerId)"
-              >
+              <div class="pl-4 border-l-2 leading-relaxed text-sm select-text"
+                :class="getSpeakerBorderColor(segment.speakerId)">
                 <template v-for="(word, wordIndex) in segment.words" :key="wordIndex">
-                  <span
-                    v-if="word.type === 'word'"
-                    :class="{
-                      'hover:bg-primary/20 rounded px-0.5 cursor-pointer transition-colors':
-                        wordSyncEnabled,
-                      'bg-primary/30 text-primary-foreground rounded px-0.5': isCurrentWord(word),
-                      'bg-yellow-200 text-yellow-900 rounded px-0.5':
-                        highlightedWord === word.originalIndex,
-                    }"
-                    @click="wordSyncEnabled && $emit('word-clicked', word.start)"
-                    @mouseenter="highlightedWord = word.originalIndex"
-                    @mouseleave="highlightedWord = null"
-                    :title="
-                      wordSyncEnabled
+                  <span v-if="word.type === 'word'" :class="{
+                    'hover:bg-primary/20 rounded px-0.5 cursor-pointer transition-colors':
+                      wordSyncEnabled,
+                    'bg-primary/30 text-primary-foreground rounded px-0.5': isCurrentWord(word),
+                    'bg-yellow-200 text-yellow-900 rounded px-0.5':
+                      highlightedWord === word.originalIndex,
+                  }" @click="wordSyncEnabled && $emit('word-clicked', word.start)"
+                    @mouseenter="highlightedWord = word.originalIndex" @mouseleave="highlightedWord = null" :title="wordSyncEnabled
                         ? `${word.start.toFixed(2)}s - ${word.end.toFixed(2)}s (${word.speakerId})`
                         : undefined
-                    "
-                    >{{ word.text }}</span
-                  ><span v-else-if="word.type === 'spacing'">{{ word.text }}</span>
+                      ">{{ word.text }}</span><span v-else-if="word.type === 'spacing'">{{ word.text }}</span>
                 </template>
               </div>
             </div>
@@ -449,9 +410,9 @@ function generateSRT(words: Word[]): string {
       currentSentence.end = word.end
 
       // End sentence on speaker change, punctuation, or every 10 words
-      const shouldEndSentence = 
+      const shouldEndSentence =
         word.speakerId !== currentSentence.speakerId ||
-        word.text.match(/[.!?]/) || 
+        word.text.match(/[.!?]/) ||
         (index + 1) % 10 === 0
 
       if (shouldEndSentence) {
