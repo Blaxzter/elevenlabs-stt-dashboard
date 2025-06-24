@@ -20,7 +20,7 @@ export interface ElevenLabsSTTResponse {
     start: number
     end: number
     type: 'word' | 'spacing'
-    speaker_id: string
+    speakerId: string
     logprob: number
     characters: unknown[] | null
   }>
