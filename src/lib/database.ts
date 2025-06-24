@@ -19,7 +19,7 @@ export interface ElevenLabsSTTResponse {
     text: string
     start: number
     end: number
-    type: 'word' | 'spacing'
+    type: 'word' | 'spacing' | 'audio_event'
     speakerId: string
     logprob: number
     characters: unknown[] | null
@@ -82,7 +82,15 @@ class DatabaseService {
                 languageCode: transcription.apiResponse.languageCode,
                 languageProbability: transcription.apiResponse.languageProbability,
                 text: transcription.apiResponse.text,
-                words: transcription.apiResponse.words.map((w) => ({ ...w })),
+                words: transcription.apiResponse.words.map((w) => ({
+                  text: w.text,
+                  start: w.start,
+                  end: w.end,
+                  type: w.type,
+                  speakerId: w.speakerId,
+                  logprob: w.logprob,
+                  characters: null,
+                })),
               }
             : null,
           audioBlob: transcription.audioBlob,

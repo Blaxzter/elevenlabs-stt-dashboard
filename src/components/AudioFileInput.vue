@@ -15,7 +15,7 @@
             browse
           </button>
         </p>
-        <p class="text-sm text-muted-foreground">Supports MP3, WAV, M4A, OGG (max 25MB)</p>
+        <p class="text-sm text-muted-foreground">Supports MP3, WAV, M4A, OGG (max 1GB)</p>
       </div>
 
       <input ref="fileInput" type="file" accept="audio/*" class="hidden" @change="handleFileSelect" />
@@ -39,7 +39,13 @@
         </Button>
       </div> <!-- Audio Preview -->
       <div v-if="audioUrl" class="space-y-3">
-        <div ref="waveformContainer" class="w-full bg-muted/30 rounded-lg min-h-[100px]"></div>
+        <div ref="waveformContainer" class="w-full bg-muted/30 rounded-lg min-h-[100px] relative">
+          <!-- Loading spinner -->
+          <div v-if="isWaveformLoading" class="absolute inset-0 flex items-center justify-center flex-col space-y-2">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            <span class="text-muted-foreground">Loading waveform...</span>
+          </div>
+        </div>
 
         <!-- Region Controls -->
         <div v-if="selectedRegion"
@@ -197,6 +203,7 @@ const duration = ref<number | null>(null)
 const isDragOver = ref(false)
 const error = ref<string | null>(null)
 const isPlaying = ref(false)
+const isWaveformLoading = ref(false)
 const selectedRegion = ref<{ start: number; end: number } | null>(null)
 
 // Local transcription options
@@ -209,7 +216,7 @@ const transcriptionOptions = ref<TranscriptionOptions>({
 })
 
 // Audio file validation
-const MAX_FILE_SIZE = 25 * 1024 * 1024 // 25MB
+const MAX_FILE_SIZE = 1000 * 1024 * 1024 // 
 const ALLOWED_TYPES = [
   'audio/mpeg',
   'audio/wav',
@@ -223,7 +230,7 @@ const ALLOWED_TYPES = [
 
 function validateFile(file: File): string | null {
   if (file.size > MAX_FILE_SIZE) {
-    return 'File size must be less than 25MB'
+    return 'File size must be less than 100MB'
   }
 
   if (!ALLOWED_TYPES.includes(file.type)) {
@@ -261,6 +268,10 @@ function setFile(file: File) {
 
 async function initializeWaveSurfer() {
   if (!waveformContainer.value || !audioUrl.value) return
+
+  // Show loading spinner
+  isWaveformLoading.value = true
+
   // Destroy existing instance
   if (wavesurfer.value) {
     wavesurfer.value.destroy()
@@ -281,15 +292,17 @@ async function initializeWaveSurfer() {
     backend: 'WebAudio',
     mediaControls: false,
     interact: true,
-    minPxPerSec: 30, // Lower for faster loading
+    minPxPerSec: 0, // Set to 0 to fit entire audio in container width
+    fillParent: true, // Ensure the waveform fills the container
   })  // Register the regions plugin
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   wavesurfer.value.registerPlugin(regionsPlugin.value as any)
 
-
   // Set up event listeners
   wavesurfer.value.on('ready', () => {
     duration.value = wavesurfer.value?.getDuration() || 0
+    // Hide loading spinner when ready
+    isWaveformLoading.value = false
   })
 
   wavesurfer.value.on('play', () => {
@@ -352,6 +365,7 @@ function clearFile() {
   selectedFile.value = null
   duration.value = null
   selectedRegion.value = null
+  isWaveformLoading.value = false
 
   if (wavesurfer.value) {
     wavesurfer.value.destroy()

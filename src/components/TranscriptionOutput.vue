@@ -83,6 +83,10 @@
           </Badge>
           <Badge variant="outline">
             {{transcription.apiResponse.words.filter((w) => w.type === 'word').length}} words
+            <span v-if="transcription.apiResponse.words.filter((w) => w.type === 'audio_event').length > 0"
+              class="ml-1">
+              + {{transcription.apiResponse.words.filter((w) => w.type === 'audio_event').length}} events
+            </span>
           </Badge>
           <Badge variant="outline" v-if="countUniqueSpeakers > 1">
             {{ countUniqueSpeakers }} speakers
@@ -103,9 +107,8 @@
               class="flex items-center gap-2 px-2 py-1 rounded-full text-xs font-medium"
               :class="getSpeakerStyle(speakerId)">
               <div class="w-2 h-2 rounded-full" :class="getSpeakerDotColor(speakerId)"></div>
-              <span>{{ getSpeakerLabel(speakerId) }}</span>
-              <span class="text-xs opacity-75">
-                ({{ getSpeakerWordCount(speakerId) }} words)
+              <span>{{ getSpeakerLabel(speakerId) }}</span> <span class="text-xs opacity-75">
+                ({{ getSpeakerWordCount(speakerId) }} items)
               </span>
             </div>
           </div>
@@ -136,6 +139,18 @@
                     @mouseenter="highlightedWord = word.originalIndex" @mouseleave="highlightedWord = null" :title="wordSyncEnabled
                       ? `${word.start.toFixed(2)}s - ${word.end.toFixed(2)}s (${word.speakerId})`
                       : undefined
+                      ">{{ word.text }}</span><span v-else-if="word.type === 'audio_event'"
+                    :data-word-index="word.originalIndex" :class="{
+                      'hover:bg-primary/10 rounded px-0.5 cursor-pointer transition-colors':
+                        wordSyncEnabled,
+                      'bg-primary/20 text-primary-foreground rounded px-0.5': isCurrentWord(word),
+                      'bg-yellow-100 text-yellow-800 rounded px-0.5':
+                        highlightedWord === word.originalIndex,
+                    }" class="text-muted-foreground italic text-xs"
+                    @click="wordSyncEnabled && $emit('word-clicked', word.start)"
+                    @mouseenter="highlightedWord = word.originalIndex" @mouseleave="highlightedWord = null" :title="wordSyncEnabled
+                      ? `${word.start.toFixed(2)}s - ${word.end.toFixed(2)}s (${word.speakerId})`
+                      : undefined
                       ">{{ word.text }}</span><span v-else-if="word.type === 'spacing'">{{ word.text }}</span>
                 </template>
               </div>
@@ -160,7 +175,7 @@ interface Word {
   text: string
   start: number
   end: number
-  type: 'word' | 'spacing'
+  type: 'word' | 'spacing' | 'audio_event'
   speakerId: string
   logprob: number
   characters: unknown[] | null
@@ -255,7 +270,7 @@ const countUniqueSpeakers = computed(() => {
 function getSpeakerWordCount(speakerId: string): number {
   if (!props.transcription?.apiResponse?.words) return 0
   return props.transcription.apiResponse.words.filter(
-    (word: Word) => word.type === 'word' && word.speakerId === speakerId
+    (word: Word) => (word.type === 'word' || word.type === 'audio_event') && word.speakerId === speakerId
   ).length
 }
 
@@ -359,7 +374,7 @@ function scrollToCurrentWord() {
 
   // Find the current word based on audio time
   const currentWordIndex = props.transcription.apiResponse.words.findIndex((word: Word) =>
-    word.type === 'word' && props.currentTime >= word.start && props.currentTime <= word.end
+    (word.type === 'word' || word.type === 'audio_event') && props.currentTime >= word.start && props.currentTime <= word.end
   )
 
   if (currentWordIndex !== -1) {
@@ -449,7 +464,7 @@ function generateSRT(words: Word[]): string {
   let currentSentence = { text: '', start: 0, end: 0, speakerId: '' }
 
   words.forEach((word, index) => {
-    if (word.type === 'word') {
+    if (word.type === 'word' || word.type === 'audio_event') {
       if (currentSentence.text === '') {
         currentSentence.start = word.start
         currentSentence.speakerId = word.speakerId
@@ -501,7 +516,7 @@ function generateSpeakerText(words: Word[]): string {
   let currentSpeaker = ''
   let currentText = ''
   words.forEach((word) => {
-    if (word.type === 'word') {
+    if (word.type === 'word' || word.type === 'audio_event') {
       if (currentSpeaker !== word.speakerId) {
         if (currentText.trim()) {
           result += `${getSpeakerLabel(currentSpeaker)}: ${currentText.trim()}\n\n`

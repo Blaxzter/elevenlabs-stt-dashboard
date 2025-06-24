@@ -16,6 +16,10 @@ const router = createRouter({
       component: TranscriptionView,
       props: true,
     },
+    {
+      path: '/:pathMatch(.*)*',
+      redirect: '/',
+    },
   ],
 })
 

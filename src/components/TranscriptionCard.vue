@@ -1,28 +1,25 @@
 <template>
-  <Card class="hover:shadow-md transition-shadow cursor-pointer" @click="$emit('click')">
+  <Card class="hover:shadow-md transition-shadow cursor-pointer overflow-hidden" @click="$emit('click')">
     <CardHeader class="pb-3">
-      <div class="flex items-start justify-between">
-        <div class="flex items-center space-x-2">
-          <FileAudio class="h-5 w-5 text-primary" />
-          <div>
-            <CardTitle class="text-base truncate">{{ transcription.filename }}</CardTitle>
+      <div class="flex items-start justify-between gap-3">
+        <div class="flex items-center space-x-2 min-w-0 flex-1">
+          <FileAudio class="h-5 w-5 text-primary flex-shrink-0" />
+          <div class="min-w-0 flex-1">
+            <CardTitle class="text-base truncate max-w-[200px]" :title="transcription.filename">{{
+              transcription.filename }}</CardTitle>
             <p class="text-xs text-muted-foreground">
               {{ formatDate(transcription.createdAt) }}
             </p>
           </div>
         </div>
 
-        <div class="flex flex-col items-end space-y-1">
+        <div class="flex flex-col items-end space-y-1 flex-shrink-0">
           <Badge :variant="getStatusVariant(transcription.status)" class="text-xs">
             {{ getStatusText(transcription.status) }}
           </Badge>
 
-          <Button
-            variant="ghost"
-            size="sm"
-            @click.stop="$emit('delete')"
-            class="h-6 w-6 p-0 opacity-60 hover:opacity-100"
-          >
+          <Button variant="ghost" size="sm" @click.stop="$emit('delete')"
+            class="h-6 w-6 p-0 opacity-60 hover:opacity-100">
             <Trash2 class="h-3 w-3" />
           </Button>
         </div>
@@ -51,10 +48,7 @@
       </div>
 
       <!-- Preview Text -->
-      <div
-        v-if="transcription.status === 'completed' && transcription.apiResponse"
-        class="space-y-2"
-      >
+      <div v-if="transcription.status === 'completed' && transcription.apiResponse" class="space-y-2">
         <p class="text-xs text-muted-foreground font-medium">Preview</p>
         <p class="text-sm line-clamp-2 leading-relaxed">
           {{ transcription.apiResponse.text }}
@@ -170,5 +164,6 @@ function getWordCount(words: Array<{ type: string }>): number {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  line-clamp: 2;
 }
 </style>

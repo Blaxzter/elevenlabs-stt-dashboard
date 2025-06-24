@@ -76,7 +76,14 @@
         <CardContent>
           <div class="space-y-4">
             <!-- WaveSurfer Container -->
-            <div ref="waveformContainer" class="w-full bg-muted/30 rounded-lg min-h-[120px]"></div>
+            <div ref="waveformContainer" class="w-full bg-muted/30 rounded-lg min-h-[120px] relative">
+              <!-- Loading spinner -->
+              <div v-if="isWaveformLoading"
+                class="absolute inset-0 flex items-center justify-center flex-col space-y-2">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                <span class="text-muted-foreground">Loading waveform...</span>
+              </div>
+            </div>
 
             <!-- Playback Controls -->
             <div class="flex items-center justify-between">
@@ -155,6 +162,7 @@ const {
 } = useTranscriptions()
 
 // Local state
+const isWaveformLoading = ref(false)
 const transcription = ref<TranscriptionData | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -199,6 +207,9 @@ async function loadTranscription() {
 async function initializeWaveSurfer() {
   if (!waveformContainer.value || !audioUrl.value) return
 
+
+  isWaveformLoading.value = true
+
   // Destroy existing instance
   if (wavesurfer.value) {
     wavesurfer.value.destroy()
@@ -215,7 +226,7 @@ async function initializeWaveSurfer() {
     backend: 'WebAudio',
     mediaControls: false,
     interact: true,
-    minPxPerSec: 50, // Lower for faster loading
+    minPxPerSec: 0, // Lower for faster loading
   })
 
 
@@ -228,6 +239,8 @@ async function initializeWaveSurfer() {
     if (wavesurfer.value) {
       wavesurfer.value.setPlaybackRate(playbackRate.value)
     }
+    isWaveformLoading.value = false
+    console.log("WaveSurfer ready. Duration:", duration.value);
   })
 
   wavesurfer.value.on('audioprocess', () => {
