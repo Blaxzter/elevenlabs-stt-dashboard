@@ -104,7 +104,7 @@ const showKey = ref(false)
 const validationStatus = ref<'valid' | 'invalid' | 'validating' | null>(null)
 const validationMessage = ref('')
 const error = ref<string | null>(null)
-let validationTimeout: NodeJS.Timeout | null = null
+let validationTimeout: ReturnType<typeof setTimeout> | null = null
 
 // Load saved API key on mount
 onMounted(async () => {

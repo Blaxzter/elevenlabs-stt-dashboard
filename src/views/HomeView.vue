@@ -1,11 +1,13 @@
 <template>
-  <div class="container mx-auto px-4 py-8 max-w-6xl">
-    <!-- Header -->
-    <div class="mb-8">
-      <h1 class="text-3xl font-bold tracking-tight">ElevenLabs STT Dashboard</h1>
-      <p class="text-muted-foreground mt-2">
-        Upload audio files and transcribe them using ElevenLabs Speech-to-Text API
-      </p>
+  <div class="container mx-auto px-4 py-8 max-w-6xl"> <!-- Header -->
+    <div class="mb-8 flex items-start justify-between">
+      <div>
+        <h1 class="text-3xl font-bold tracking-tight">ElevenLabs STT Dashboard</h1>
+        <p class="text-muted-foreground mt-2">
+          Upload audio files and transcribe them using ElevenLabs Speech-to-Text API
+        </p>
+      </div>
+      <ThemeToggle variant="select" />
     </div>
 
     <!-- Main Upload Section -->
@@ -23,34 +25,39 @@
             </CardDescription>
           </CardHeader>
           <CardContent class="space-y-4">
-            <AudioFileInput
-              v-model="selectedFile"
-              v-model:transcription-options="transcriptionOptions"
-              @file-selected="handleFileSelected"
-              @error="handleFileError"
-            />
+            <AudioFileInput v-model="selectedFile" v-model:transcription-options="transcriptionOptions"
+              v-model:selected-region="selectedRegion" @file-selected="handleFileSelected" @error="handleFileError" />
 
-            <Button
-              @click="startTranscription"
-              :disabled="!canStartTranscription"
-              class="w-full"
-              size="lg"
-            >
+            <!-- Region Info -->
+            <div v-if="selectedRegion" class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
+              <div class="flex items-center space-x-2 text-blue-700">
+                <div class="w-2 h-2 bg-blue-500 rounded-full"></div>
+                <span class="font-medium">Audio region selected:</span>
+                <span>{{ formatDuration(selectedRegion.start) }} - {{ formatDuration(selectedRegion.end) }}</span>
+                <span class="text-blue-600">({{ formatDuration(selectedRegion.end - selectedRegion.start) }}
+                  duration)</span>
+              </div>
+              <p class="text-blue-600 mt-1">Only the selected region will be transcribed.</p>
+            </div>
+
+            <Button @click="startTranscription" :disabled="!canStartTranscription" class="w-full" size="lg">
               <Loader2 v-if="isProcessing" class="h-4 w-4 mr-2 animate-spin" />
               <Mic v-else class="h-4 w-4 mr-2" />
-              {{ isProcessing ? 'Processing...' : 'Start Transcription' }}
+              {{
+                isProcessing
+                  ? 'Processing...'
+                  : selectedRegion
+                    ? `Transcribe Selected Region (${formatDuration(selectedRegion.end - selectedRegion.start)})`
+                    : 'Start Transcription'
+              }}
             </Button>
           </CardContent>
         </Card>
 
         <!-- Current Transcription Preview -->
-        <TranscriptionOutput
-          v-if="currentTranscription"
-          :transcription="currentTranscription"
-          :current-time="currentAudioTime"
-          v-model:word-sync-enabled="wordSyncEnabled"
-          @word-clicked="handleWordClick"
-        />
+        <TranscriptionOutput v-if="currentTranscription" :transcription="currentTranscription"
+          :current-time="currentAudioTime" v-model:word-sync-enabled="wordSyncEnabled"
+          @word-clicked="handleWordClick" />
       </div>
 
       <!-- Settings Panel -->
@@ -63,11 +70,7 @@
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ApiKeyInput
-              v-model="apiKey"
-              @validated="handleApiKeyValidated"
-              @error="handleApiKeyError"
-            />
+            <ApiKeyInput v-model="apiKey" @validated="handleApiKeyValidated" @error="handleApiKeyError" />
           </CardContent>
         </Card>
 
@@ -127,13 +130,9 @@
 
       <!-- Transcriptions Grid -->
       <div v-else class="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
-        <TranscriptionCard
-          v-for="transcription in transcriptions"
-          :key="transcription.id"
-          :transcription="transcription"
-          @click="viewTranscription(transcription)"
-          @delete="deleteTranscription(transcription.id)"
-        />
+        <TranscriptionCard v-for="transcription in transcriptions" :key="transcription.id"
+          :transcription="transcription" @click="viewTranscription(transcription)"
+          @delete="deleteTranscription(transcription.id)" />
       </div>
     </div>
 
@@ -168,6 +167,7 @@ import AudioFileInput from '@/components/AudioFileInput.vue'
 import ApiKeyInput from '@/components/ApiKeyInput.vue'
 import TranscriptionOutput from '@/components/TranscriptionOutput.vue'
 import TranscriptionCard from '@/components/TranscriptionCard.vue'
+import ThemeToggle from '@/components/ThemeToggle.vue'
 
 import { useTranscriptions } from '@/composables/useTranscriptions'
 import type { TranscriptionData } from '@/lib/database'
@@ -190,6 +190,7 @@ const {
 // Local state
 const selectedFile = ref<File | null>(null)
 const apiKey = ref('')
+const selectedRegion = ref<{ start: number; end: number } | null>(null)
 const transcriptionOptions = ref({
   modelId: 'scribe_v1',
   tagAudioEvents: true,
@@ -233,8 +234,32 @@ async function startTranscription() {
     isProcessing.value = true
     error.value = null
 
+    let fileToTranscribe = selectedFile.value
+
+    // If a region is selected, cut the audio first
+    if (selectedRegion.value) {
+      try {
+        const { audioProcessor } = await import('@/lib/audio-processor')
+
+        // Validate the region
+        const isValidRegion = await audioProcessor.validateRegion(selectedFile.value, selectedRegion.value)
+        if (!isValidRegion) {
+          throw new Error('Invalid audio region selected')
+        }
+
+        // Cut the audio to the selected region
+        fileToTranscribe = await audioProcessor.cutAudioRegion(selectedFile.value, selectedRegion.value)
+
+        console.log(`Audio cut to region ${selectedRegion.value.start}s - ${selectedRegion.value.end}s`)
+      } catch (audioError) {
+        console.error('Audio cutting failed:', audioError)
+        error.value = audioError instanceof Error ? audioError.message : 'Failed to process audio region'
+        return
+      }
+    }
+
     const transcriptionId = await createTranscription(
-      selectedFile.value,
+      fileToTranscribe,
       apiKey.value,
       transcriptionOptions.value,
     )
@@ -245,8 +270,9 @@ async function startTranscription() {
       currentTranscription.value = transcription
     }
 
-    // Clear the selected file
+    // Clear the selected file and region
     selectedFile.value = null
+    selectedRegion.value = null
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Failed to start transcription'
   } finally {
@@ -281,6 +307,12 @@ async function deleteTranscription(id: string) {
 
 async function refreshTranscriptions() {
   await loadTranscriptions()
+}
+
+function formatDuration(seconds: number): string {
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = Math.floor(seconds % 60)
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
 }
 
 // Watch for transcription error and display it

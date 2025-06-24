@@ -84,14 +84,14 @@
           <Badge variant="outline">
             {{transcription.apiResponse.words.filter((w) => w.type === 'word').length}} words
           </Badge>
-          <Badge variant="outline" v-if="speakerSegments.length > 1">
-            {{ speakerSegments.length }} speakers
+          <Badge variant="outline" v-if="countUniqueSpeakers > 1">
+            {{ countUniqueSpeakers }} speakers
           </Badge>
           <Badge variant="outline" v-if="speakerSegments.length > 1">
             {{ speakerSegments.length }} segments
           </Badge>
         </div> <!-- Interactive Text with Speaker Segments -->
-        <div class="max-h-96 overflow-auto space-y-3">
+        <div ref="transcriptionContainer" class="max-h-96 overflow-auto space-y-3">
           <p v-if="wordSyncEnabled" class="text-xs text-muted-foreground mb-3">
             Click on words to jump to audio position
           </p>
@@ -122,13 +122,11 @@
                 <span class="text-xs text-muted-foreground">
                   {{ formatTime(segment.startTime) }} - {{ formatTime(segment.endTime) }}
                 </span>
-              </div>
-
-              <!-- Speaker Text -->
+              </div> <!-- Speaker Text -->
               <div class="pl-4 border-l-2 leading-relaxed text-sm select-text"
-                :class="getSpeakerBorderColor(segment.speakerId)">
-                <template v-for="(word, wordIndex) in segment.words" :key="wordIndex">
-                  <span v-if="word.type === 'word'" :class="{
+                :class="getSpeakerBorderColor(segment.speakerId)"><template v-for="(word, wordIndex) in segment.words"
+                  :key="wordIndex">
+                  <span v-if="word.type === 'word'" :data-word-index="word.originalIndex" :class="{
                     'hover:bg-primary/20 rounded px-0.5 cursor-pointer transition-colors':
                       wordSyncEnabled,
                     'bg-primary/30 text-primary-foreground rounded px-0.5': isCurrentWord(word),
@@ -136,8 +134,8 @@
                       highlightedWord === word.originalIndex,
                   }" @click="wordSyncEnabled && $emit('word-clicked', word.start)"
                     @mouseenter="highlightedWord = word.originalIndex" @mouseleave="highlightedWord = null" :title="wordSyncEnabled
-                        ? `${word.start.toFixed(2)}s - ${word.end.toFixed(2)}s (${word.speakerId})`
-                        : undefined
+                      ? `${word.start.toFixed(2)}s - ${word.end.toFixed(2)}s (${word.speakerId})`
+                      : undefined
                       ">{{ word.text }}</span><span v-else-if="word.type === 'spacing'">{{ word.text }}</span>
                 </template>
               </div>
@@ -150,7 +148,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { Copy, Download, Loader2, AlertCircle, FileText } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -165,6 +163,7 @@ interface Word {
   type: 'word' | 'spacing'
   speakerId: string
   logprob: number
+  characters: unknown[] | null
 }
 
 interface WordWithIndex extends Word {
@@ -199,6 +198,7 @@ const emit = defineEmits<TranscriptionOutputEmits>()
 
 const isJsonView = ref(false)
 const highlightedWord = ref<number | null>(null)
+const transcriptionContainer = ref<HTMLElement | null>(null)
 
 const wordSyncEnabled = computed({
   get: () => props.wordSyncEnabled,
@@ -211,9 +211,7 @@ const speakerSegments = computed(() => {
 
   const segments: SpeakerSegment[] = []
   let currentSegment: SpeakerSegment | null = null
-
-  props.transcription.apiResponse.words.forEach((word: Word, index: number) => {
-    // Add original index for highlighting
+  props.transcription.apiResponse.words.forEach((word: Word, index: number) => {    // Add original index for highlighting
     const wordWithIndex: WordWithIndex = { ...word, originalIndex: index }
 
     if (!currentSegment || currentSegment.speakerId !== word.speakerId) {
@@ -247,6 +245,10 @@ const uniqueSpeakers = computed(() => {
     speakers.add(segment.speakerId)
   })
   return Array.from(speakers).sort()
+})
+
+const countUniqueSpeakers = computed(() => {
+  return uniqueSpeakers.value?.length || 0
 })
 
 // Get word count for each speaker
@@ -286,7 +288,12 @@ const speakerColors = [
   },
 ]
 
-function getSpeakerColorIndex(speakerId: string): number {
+function getSpeakerColorIndex(speakerId: string | null | undefined): number {
+  // Check if speakerId is valid
+  if (!speakerId || typeof speakerId !== 'string' || speakerId.trim() === '') {
+    return 0 // Default to first color
+  }
+
   // Extract number from speaker ID or use hash
   const match = speakerId.match(/\d+/)
   if (match) {
@@ -300,19 +307,23 @@ function getSpeakerColorIndex(speakerId: string): number {
   return Math.abs(hash) % speakerColors.length
 }
 
-function getSpeakerStyle(speakerId: string): string {
+function getSpeakerStyle(speakerId: string | null | undefined): string {
   return speakerColors[getSpeakerColorIndex(speakerId)].style
 }
 
-function getSpeakerDotColor(speakerId: string): string {
+function getSpeakerDotColor(speakerId: string | null | undefined): string {
   return speakerColors[getSpeakerColorIndex(speakerId)].dot
 }
 
-function getSpeakerBorderColor(speakerId: string): string {
+function getSpeakerBorderColor(speakerId: string | null | undefined): string {
   return speakerColors[getSpeakerColorIndex(speakerId)].border
 }
 
-function getSpeakerLabel(speakerId: string): string {
+function getSpeakerLabel(speakerId: string | null | undefined): string {
+  if (!speakerId || typeof speakerId !== 'string' || speakerId.trim() === '') {
+    return 'Unknown Speaker'
+  }
+
   const match = speakerId.match(/speaker_(\d+)/)
   if (match) {
     return `Speaker ${parseInt(match[1]) + 1}`
@@ -329,6 +340,43 @@ function formatTime(seconds: number): string {
 // Find current word based on audio time
 function isCurrentWord(word: Word | WordWithIndex): boolean {
   return props.currentTime >= word.start && props.currentTime <= word.end
+}
+
+// Note: Removed scrollToHighlightedWord function and its watcher to prevent 
+// unwanted scroll behavior when hovering over words. The highlighted word 
+// is now only used for visual highlighting.
+
+// Watch for current time changes and scroll to current word
+watch(() => props.currentTime, () => {
+  if (props.currentTime > 0 && wordSyncEnabled.value) {
+    scrollToCurrentWord()
+  }
+})
+
+// Scroll current word into view
+function scrollToCurrentWord() {
+  if (!transcriptionContainer.value || !props.transcription?.apiResponse?.words) return
+
+  // Find the current word based on audio time
+  const currentWordIndex = props.transcription.apiResponse.words.findIndex((word: Word) =>
+    word.type === 'word' && props.currentTime >= word.start && props.currentTime <= word.end
+  )
+
+  if (currentWordIndex !== -1) {
+    nextTick(() => {
+      const currentElement = transcriptionContainer.value?.querySelector(
+        `[data-word-index="${currentWordIndex}"]`
+      ) as HTMLElement
+
+      if (currentElement) {
+        currentElement.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+          inline: 'nearest'
+        })
+      }
+    })
+  }
 }
 
 // Copy transcription to clipboard
@@ -452,7 +500,6 @@ function generateSpeakerText(words: Word[]): string {
   let result = ''
   let currentSpeaker = ''
   let currentText = ''
-
   words.forEach((word) => {
     if (word.type === 'word') {
       if (currentSpeaker !== word.speakerId) {

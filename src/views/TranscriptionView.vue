@@ -24,7 +24,7 @@
       <!-- Header -->
       <div class="flex items-start justify-between">
         <div>
-          <Button variant="ghost" @click="$router.back()" class="mb-4 -ml-4">
+          <Button variant="ghost" @click="goBack" class="mb-4 -ml-4">
             <ArrowLeft class="h-4 w-4 mr-2" />
             Back to Dashboard
           </Button>
@@ -52,12 +52,8 @@
         </div>
 
         <div class="flex items-center space-x-2">
-          <Button
-            variant="outline"
-            size="sm"
-            @click="retryTranscription"
-            v-if="transcription.status === 'error'"
-          >
+          <ThemeToggle variant="button" />
+          <Button variant="outline" size="sm" @click="retryTranscription" v-if="transcription.status === 'error'">
             <RefreshCw class="h-4 w-4 mr-2" />
             Retry
           </Button>
@@ -79,15 +75,8 @@
         </CardHeader>
         <CardContent>
           <div class="space-y-4">
-            <!-- Audio Element -->
-            <audio
-              ref="audioPlayer"
-              :src="audioUrl"
-              controls
-              class="w-full"
-              @timeupdate="handleTimeUpdate"
-              @loadedmetadata="handleAudioLoaded"
-            />
+            <!-- WaveSurfer Container -->
+            <div ref="waveformContainer" class="w-full bg-muted/30 rounded-lg min-h-[120px]"></div>
 
             <!-- Playback Controls -->
             <div class="flex items-center justify-between">
@@ -103,23 +92,13 @@
               </div>
 
               <div class="flex items-center space-x-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  @click="changePlaybackRate(-0.25)"
-                  :disabled="playbackRate <= 0.5"
-                >
+                <Button variant="outline" size="sm" @click="changePlaybackRate(-0.25)" :disabled="playbackRate <= 0.5">
                   <Minus class="h-4 w-4" />
                 </Button>
                 <span class="text-sm text-muted-foreground min-w-[3rem] text-center">
                   {{ playbackRate }}x
                 </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  @click="changePlaybackRate(0.25)"
-                  :disabled="playbackRate >= 2"
-                >
+                <Button variant="outline" size="sm" @click="changePlaybackRate(0.25)" :disabled="playbackRate >= 2">
                   <Plus class="h-4 w-4" />
                 </Button>
               </div>
@@ -129,12 +108,8 @@
       </Card>
 
       <!-- Transcription Output -->
-      <TranscriptionOutput
-        :transcription="transcription"
-        :current-time="currentTime"
-        v-model:word-sync-enabled="wordSyncEnabled"
-        @word-clicked="seekToTime"
-      />
+      <TranscriptionOutput :transcription="transcription" :current-time="currentTime"
+        v-model:word-sync-enabled="wordSyncEnabled" @word-clicked="seekToTime" />
     </div>
   </div>
 </template>
@@ -142,6 +117,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import WaveSurfer from 'wavesurfer.js'
 import {
   ArrowLeft,
   Calendar,
@@ -164,6 +140,7 @@ import { Badge } from '@/components/ui/badge'
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
 
 import TranscriptionOutput from '@/components/TranscriptionOutput.vue'
+import ThemeToggle from '@/components/ThemeToggle.vue'
 import { useTranscriptions } from '@/composables/useTranscriptions'
 import type { TranscriptionData } from '@/lib/database'
 
@@ -181,7 +158,8 @@ const {
 const transcription = ref<TranscriptionData | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
-const audioPlayer = ref<HTMLAudioElement>()
+const waveformContainer = ref<HTMLDivElement>()
+const wavesurfer = ref<WaveSurfer | null>(null)
 const audioUrl = ref<string | null>(null)
 const currentTime = ref(0)
 const duration = ref(0)
@@ -206,9 +184,10 @@ async function loadTranscription() {
 
     transcription.value = data
 
-    // Create audio URL from blob
+    // Create audio URL from blob and initialize WaveSurfer
     if (data.audioBlob) {
       audioUrl.value = URL.createObjectURL(data.audioBlob)
+      await initializeWaveSurfer()
     }
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Failed to load transcription'
@@ -217,41 +196,100 @@ async function loadTranscription() {
   }
 }
 
-function handleTimeUpdate() {
-  if (audioPlayer.value) {
-    currentTime.value = audioPlayer.value.currentTime
-    isPlaying.value = !audioPlayer.value.paused
-  }
-}
+async function initializeWaveSurfer() {
+  if (!waveformContainer.value || !audioUrl.value) return
 
-function handleAudioLoaded() {
-  if (audioPlayer.value) {
-    duration.value = audioPlayer.value.duration
-    audioPlayer.value.playbackRate = playbackRate.value
+  // Destroy existing instance
+  if (wavesurfer.value) {
+    wavesurfer.value.destroy()
   }
+  wavesurfer.value = WaveSurfer.create({
+    container: waveformContainer.value,
+    waveColor: 'rgb(59, 130, 246)', // blue-500
+    progressColor: 'rgb(37, 99, 235)', // blue-600
+    cursorColor: 'rgb(239, 68, 68)', // red-500
+    barWidth: 2,
+    barRadius: 1,
+    height: 120,
+    normalize: true,
+    backend: 'WebAudio',
+    mediaControls: false,
+    interact: true,
+    minPxPerSec: 50, // Lower for faster loading
+  })
+
+
+  console.log("WaveSurfer initialized with audio URL:", audioUrl.value);
+
+  // Set up event listeners
+  wavesurfer.value.on('ready', () => {
+    duration.value = wavesurfer.value?.getDuration() || 0
+
+    if (wavesurfer.value) {
+      wavesurfer.value.setPlaybackRate(playbackRate.value)
+    }
+  })
+
+  wavesurfer.value.on('audioprocess', () => {
+    currentTime.value = wavesurfer.value?.getCurrentTime() || 0
+  })
+  wavesurfer.value.on('interaction', () => {
+    currentTime.value = wavesurfer.value?.getCurrentTime() || 0
+  })
+
+  wavesurfer.value.on('play', () => {
+    isPlaying.value = true
+  })
+
+  wavesurfer.value.on('pause', () => {
+    isPlaying.value = false
+  })
+
+  wavesurfer.value.on('finish', () => {
+    isPlaying.value = false
+    currentTime.value = 0
+  })
+
+  // Load audio
+  await wavesurfer.value.load(audioUrl.value)
 }
 
 function togglePlayback() {
-  if (!audioPlayer.value) return
+  if (!wavesurfer.value) return
 
-  if (audioPlayer.value.paused) {
-    audioPlayer.value.play()
+  if (wavesurfer.value.isPlaying()) {
+    wavesurfer.value.pause()
   } else {
-    audioPlayer.value.pause()
+    wavesurfer.value.play()
   }
 }
 
 function seekToTime(time: number) {
-  if (!audioPlayer.value) return
+  if (!wavesurfer.value) return
 
-  audioPlayer.value.currentTime = time
+  const progress = time / (duration.value || 1)
+  console.log("Seeking to time:", time, "Progress:", progress, "Duration:", duration.value);
+
+  wavesurfer.value.seekTo(progress)
   currentTime.value = time
 }
 
 function changePlaybackRate(delta: number) {
   playbackRate.value = Math.max(0.5, Math.min(2, playbackRate.value + delta))
-  if (audioPlayer.value) {
-    audioPlayer.value.playbackRate = playbackRate.value
+  if (wavesurfer.value) {
+    wavesurfer.value.setPlaybackRate(playbackRate.value)
+  }
+}
+
+function goBack() {
+  console.log("Going back to previous route", window.history);
+
+  // Check if there's history to go back to
+  if (window.history.length > 2) {
+    router.back()
+  } else {
+    // No history, navigate to home
+    router.push({ name: 'home' })
   }
 }
 
@@ -353,6 +391,9 @@ watch(
 
 // Cleanup on unmount
 onUnmounted(() => {
+  if (wavesurfer.value) {
+    wavesurfer.value.destroy()
+  }
   if (audioUrl.value) {
     URL.revokeObjectURL(audioUrl.value)
   }
