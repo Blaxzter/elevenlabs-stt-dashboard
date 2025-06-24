@@ -78,6 +78,7 @@ export default defineConfig({
       },
       workbox: {
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024, // 3MB limit
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         runtimeCaching: [
           {
             urlPattern: ({ request }) =>
@@ -105,6 +106,10 @@ export default defineConfig({
             },
           },
         ],
+      },
+      // Add specific configuration to avoid Vue dependency issues
+      injectManifest: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
       },
     }),
   ],
